@@ -1,0 +1,211 @@
+---
+title: '**NYPD Shooting Incidents**'
+shooting_datae: 11/10/2021
+output:
+  html_document:
+    df_print: paged
+  pdf_document: default
+---
+
+### Analysis of NYC Shooting rates
+### Objectives : 
+
+Analyze NYC shooting data  to get an understanding of ,
+
+a. Locations in New York City where shooting occurs more relative to others 
+b. Gather insights into breakdown of crime across the different regions within NYC
+
+For this analysis I will be using the Historic Shooting Incident from https://data.cityofnewyork.us/api/views/833y-fsy8/rows.csv?accessType=DOWNLOAD
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(error = TRUE, echo = TRUE, fig.align = 'center', cache = FALSE, cache.lazy = FALSE, message = FALSE, warning = FALSE, fig.pos = "h", error = FALSE, comment = NA)
+```
+
+```{r}
+# Ensure that this is reproducible , install all required packages if not installed
+
+library("tidyverse")
+library("caret")
+library('DT')
+library("kableExtra")
+library("ggrepel")
+```
+
+```{r echo = FALSE}
+#options(digits = 5)
+```
+
+Use the read_csv file to read the csv file from https://shooting_dataa.cityofnewyork.us/api/views/833y-fsy8/rows.csv?accessType=DOWNLOAD
+
+```{r DataSourcing}
+url_in <- "https://data.cityofnewyork.us/api/views/833y-fsy8/rows.csv?accessType=DOWNLOAD"
+shooting_data <- read_csv(url_in)
+#datatable(shooting_data)
+```
+
+### Tidy and transform the data
+We will do a number of steps to prepare the data for analysis 
+
+1. Identify columns with NA values
+2. Remove columns with NA values
+
+```{r}
+## Tidy the shooting_data  ##
+
+## Description of the data  ##
+dim(shooting_data)
+
+```
+The dataset has 23,568 rows and 19 columns
+
+
+The dataset columns are the following
+```{r}
+colnames(shooting_data)
+
+## Drop Rows with NA ##
+shooting_data <- na.omit(shooting_data)
+sapply(shooting_data, function(x) sum(is.na(x)))
+
+shooting_data$BORO <- factor(shooting_data$BORO)
+```
+
+```{r}
+# Let's do any transformations that are applicable
+
+# change the data to MDY format 
+
+library(lubridate)
+shooting_data$OCCUR_DATE <- date(mdy(shooting_data$OCCUR_DATE))
+
+# We can drop some columns that are not needed
+shooting_data <- shooting_data %>% select(
+                      -Lon_Lat,
+                      -Latitude,
+                      -Longitude,
+                      -X_COORD_CD,
+                      -Y_COORD_CD,
+                      -LOCATION_DESC,
+                      -JURISDICTION_CODE)
+datatable(shooting_data)
+```
+
+### Data Analysis
+Now that we have prepared the data let's do some analysis on the data
+
+**1. Let's look at shooting incidents broken down by location ( BORO )**
+```{r}
+# Count the occurrences of a borough name to give an idea of the shooting rate in the borough.
+
+data_by_borough <- table(shooting_data$BORO)
+data_by_borough <- as.data.frame(data_by_borough)
+data_by_borough$Percent <- round((data_by_borough$Freq / sum(data_by_borough$Freq)*100),2)
+
+kable(head(data_by_borough, 5), booktabs = TRUE) %>% kable_styling(font_size = 10)
+```
+
+Let's plot the data
+```{r}
+library(ggplot2)
+ggplot(data_by_borough, aes(x=Var1, y=Freq, fill=Var1)) + geom_bar(stat="identity") + geom_text_repel(data=data_by_borough, aes(label=Var1))
+
+```
+
+
+### Conclusion : Data clearly shows that the Brooklyn has the highest number of incidents while Staten Island is the lowest
+
+**2. Now, let's look at shooting incidents broken down by AgeGroup of the perpetrator**
+```{r}
+# Count the occurrences of a borough name to give an idea of the shooting rate in the borough.
+
+data_by_age <- table(shooting_data$PERP_AGE_GROUP)
+data_by_age <- as.data.frame(data_by_age)
+data_by_age$Percent <- round((data_by_age$Freq / sum(data_by_age$Freq)*100),2)
+
+kable(head(data_by_age, 5), booktabs = TRUE) %>% kable_styling(font_size = 10)
+```
+
+Let's plot the data
+```{r}
+library(ggrepel)
+ggplot(data_by_age, aes(x=Var1, y=Freq, fill=Var1)) + geom_bar(stat="identity") + geom_text_repel(data=data_by_age, aes(label=Var1))
+
+```
+
+### Conclusion : Data clearly shows that the majority of the perpetrators are in the age range for 18 - 44.
+
+**3. Let's look at shooting incidents over time ( broken down by years ) **
+```{r}
+# Count the occurrences of a borough name to give an idea of the shooting rate in the borough.
+
+data_by_age <- table(shooting_data$PERP_AGE_GROUP)
+data_by_age <- as.data.frame(data_by_age)
+data_by_age$Percent <- round((data_by_age$Freq / sum(data_by_age$Freq)*100),2)
+
+kable(head(data_by_age, 5), booktabs = TRUE) %>% kable_styling(font_size = 10)
+```
+
+Let's plot the data
+```{r}
+years <-subset(shooting_data, select=c(INCIDENT_KEY, OCCUR_DATE))
+
+y <- 4                                
+years$YEAR <- substr(years$OCCUR_DATE, nchar(years$OCCUR_DATE) - y + 1, nchar(years$OCCUR_DATE)) 
+
+
+years <- subset(years, select = -c(OCCUR_DATE))
+
+by_year <- table(years$YEAR)
+by_year <- as.data.frame(by_year)
+
+ggplot(data=by_year, aes(x=Var1, y=Freq, group=1)) +  geom_line()+ geom_point()+ theme(axis.text.x = element_text(angle = 90, hjust = 1))
+```
+
+### Conclusion : Data shows that shooting incidents were trending down from 2006 - 2019 , however the year 2020 is seeing an uptrend.
+
+\newpage
+# Modelling 
+
+## Let's start by creating our training and test datasets
+```{r}
+y <- shooting_data$BORO
+set.seed(500, sample.kind = "Rounding")
+test <- createDataPartition(y, times = 1, p = 0.2, list = FALSE)
+my_training_set <- shooting_data %>% slice(-test)
+my_testing_set <- shooting_data %>% slice(test)
+```
+
+## Simple prediction model
+
+Let's start with a simple model is to  predict the borough where the shooting can occur. 
+
+
+```{r }
+pred <- my_training_set %>% group_by(BORO) %>% summarize(count = n()) %>% filter(count == max(count)) %>% pull(BORO)
+y_pred <- my_testing_set %>%mutate(y_hat = pred) %>%pull(y_hat)
+confusionMatrix(y_pred, as.factor(my_testing_set$BORO))
+accuracy <- confusionMatrix(y_pred, as.factor(my_testing_set$BORO))$overall["Accuracy"]
+accuracy
+```
+
+So, we are getting about 40 % accuracy, which obviously is very poor and can be vastly improved.
+
+
+
+# Bias in modelling 
+Given my familiarity with New York City and looking at the initial visualization result I detect my own self bias towards Brooklyn having the highest shooting incidents, this needs to be corrected/eliminated with some more accurate modeling.
+
+# Conclusion
+
+Here in this exercise we loaded the data, scrubbed and tied it and did some initial analysis on,
+1. The location where shooting is more prevalent
+2. Shooting over time and getting insight on trends over a time period
+
+We also did some simple modeling to predict where the shooting could occur even though this can be vastly improved with more sophisticated modelling.
+
+
+## Let's add the session info
+
+```{r }
+sessionInfo()
+```
